@@ -280,7 +280,8 @@ html.fast .row-track, html.fast .rows-track, html.fast .grid-track, html.fast .r
 .btn svg { width: 28px; height: 28px; margin-right: 14px; }
 .btn.focus { background: var(--cream); color: var(--bg); }
 
-.detail-seasons { margin-top: 60px; height: 56px; white-space: nowrap; }
+.detail-seasons { margin-top: 60px; height: 56px; white-space: nowrap; overflow: hidden; }
+.seasons-track { display: inline-block; position: relative; will-change: transform; transition: transform 0.22s var(--ease); }
 .pill {
   display: inline-block; height: 56px; line-height: 56px; padding: 0 28px; margin-right: 12px;
   border-radius: 28px; font: 600 24px/56px var(--body); color: var(--dim);

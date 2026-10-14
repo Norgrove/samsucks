@@ -25,7 +25,9 @@ export function DetailScreen(initial, { autoplay = false } = {}) {
   const tags = h('div', 'detail-tags', body);
   const summary = h('p', 'detail-summary', body);
   const buttonsEl = h('div', 'detail-buttons', body);
+  // Season pills slide inside a clip so the current one stays on screen.
   const seasonsEl = h('div', 'detail-seasons', body);
+  const seasonsTrack = h('div', 'seasons-track', seasonsEl);
   const episodesWrap = h('div', 'detail-episodes', body);
 
   let item = initial;
@@ -33,6 +35,7 @@ export function DetailScreen(initial, { autoplay = false } = {}) {
   let buttonIndex = 0;
   let seasons = [];
   let seasonIndex = 0;
+  let seasonScroll = 0;
   let episodes = null;
   let zone = 'buttons';
   let alive = true;
@@ -108,8 +111,9 @@ export function DetailScreen(initial, { autoplay = false } = {}) {
   }
 
   function renderSeasons() {
-    seasonsEl.innerHTML = '';
-    seasons.forEach(s => { s.el = h('div', 'pill', seasonsEl); s.el.textContent = s.title; });
+    seasonsTrack.innerHTML = '';
+    seasonScroll = 0;
+    seasons.forEach(s => { s.el = h('div', 'pill', seasonsTrack); s.el.textContent = s.title; });
     renderFocus();
   }
 
@@ -119,9 +123,25 @@ export function DetailScreen(initial, { autoplay = false } = {}) {
       toggleClass(s.el, 'focus', zone === 'seasons' && i === seasonIndex);
       toggleClass(s.el, 'current', i === seasonIndex);
     });
+    scrollSeasons();
     if (episodes) episodes.row.setActive(zone === 'episodes');
     setTransform(body, zone === 'buttons' ? 'translateY(0)' : 'translateY(' + (-SHIFT) + 'px)');
     toggleClass(el, 'shifted', zone !== 'buttons');
+  }
+
+  // Slide the pills just far enough to bring the current season into view.
+  function scrollSeasons() {
+    const s = seasons[seasonIndex];
+    if (!s) return;
+    const pad = 40;
+    const clipW = seasonsEl.offsetWidth;
+    const maxScroll = Math.max(0, seasonsTrack.scrollWidth - clipW);
+    const left = s.el.offsetLeft;
+    const right = left + s.el.offsetWidth;
+    if (left - pad < seasonScroll) seasonScroll = left - pad;
+    else if (right + pad > seasonScroll + clipW) seasonScroll = right + pad - clipW;
+    seasonScroll = Math.max(0, Math.min(maxScroll, seasonScroll));
+    setTransform(seasonsTrack, 'translateX(' + (-seasonScroll) + 'px)');
   }
 
   async function loadEpisodes(season) {
