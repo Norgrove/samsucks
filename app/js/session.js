@@ -26,6 +26,21 @@ export function useServer(resource, uri) {
   store.set('server', { uri, token: resource.accessToken, name: resource.name, id: resource.clientIdentifier });
 }
 
+// Libraries the user has hidden from the home top bar, per server, by section key.
+export function hiddenSections() {
+  const all = store.get('hiddenSections', {});
+  return (session.server && all[session.server.id]) || [];
+}
+
+export function setSectionHidden(key, hidden) {
+  if (!session.server) return;
+  const all = store.get('hiddenSections', {});
+  const keys = (all[session.server.id] || []).filter(k => k !== key);
+  if (hidden) keys.push(key);
+  all[session.server.id] = keys;
+  store.set('hiddenSections', all);
+}
+
 export function signOut() {
   session.token = null;
   session.user = null;

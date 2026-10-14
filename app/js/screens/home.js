@@ -3,13 +3,14 @@
 import { h, setText, setTransform, toggleClass } from '../util/dom.js';
 import { Row } from '../ui/row.js';
 import { useAmbience, HeroArt } from '../ui/backdrop.js';
-import { session } from '../session.js';
+import { session, hiddenSections } from '../session.js';
 import { metaLine } from '../util/format.js';
 import { isFast } from '../input.js';
 import * as store from '../util/store.js';
 import * as icons from '../ui/icons.js';
 import { openItem, playItem, openLibrary, openSearch, openSettings } from '../nav.js';
 import { error, log } from '../util/log.js';
+import * as watchlist from '../plex/watchlist.js';
 
 const ROWS_TOP = 600;
 
@@ -18,7 +19,7 @@ function slimHub(hub) {
   const keep = ['ratingKey', 'key', 'type', 'title', 'grandparentTitle', 'parentTitle', 'year', 'thumb', 'art',
     'grandparentThumb', 'grandparentArt', 'parentThumb', 'index', 'parentIndex', 'duration', 'viewOffset',
     'viewCount', 'leafCount', 'viewedLeafCount', 'childCount', 'contentRating', 'audienceRating', 'summary',
-    'originallyAvailableAt', 'UltraBlurColors', 'grandparentRatingKey', 'parentRatingKey', 'Image'];
+    'originallyAvailableAt', 'UltraBlurColors', 'grandparentRatingKey', 'parentRatingKey', 'Image', 'guid'];
   return {
     hubIdentifier: hub.hubIdentifier, title: hub.title, type: hub.type,
     Metadata: hub.Metadata.map(m => {
@@ -50,7 +51,11 @@ export function HomeScreen() {
   const brandText = h('div', 'brand-text', brand);
   h('img', 'brand-wordmark', brandText).src = 'img/wordmark.png';
   h('div', 'brand-by', brandText).textContent = 'by rfaile313';
+  // Library tabs slide inside a clip so Search and Settings stay pinned on screen.
   const navEl = h('nav', 'nav', top);
+  const navClip = h('div', 'nav-clip', navEl);
+  const navTrack = h('div', 'nav-track', navClip);
+  const navPinned = h('div', 'nav-pinned', navEl);
   const who = h('div', 'topbar-who', top);
   setText(who, session.server ? session.server.name : '');
 
@@ -71,23 +76,56 @@ export function HomeScreen() {
   let zone = 'rows';
   let navItems = [];
   let navIndex = 0;
+  let navScroll = 0;
   let loadedAt = 0;
   let heroTimer = 0;
   let artTimer = 0;
   let reportedPaint = false;
+  let allSections = [];
+  let hiddenSig = '';
+  let serverHubs = [];
+  let watchHub = null;
+  let watchAt = 0;
+
+  const navKey = n => n.id + (n.section ? ':' + n.section.key : '');
 
   function buildNav(sections) {
-    navEl.innerHTML = '';
+    allSections = sections;
+    const hidden = hiddenSections();
+    hiddenSig = hidden.join(',');
+    const focused = navItems[navIndex] ? navKey(navItems[navIndex]) : '';
+    navTrack.innerHTML = '';
+    navPinned.innerHTML = '';
+    navScroll = 0;
+    setTransform(navTrack, 'translateX(0px)');
     navItems = [{ label: 'Home', id: 'home' }]
-      .concat(sections.map(s => ({ label: s.title, id: 'section', section: s })))
+      .concat(sections.filter(s => hidden.indexOf(s.key) < 0).map(s => ({ label: s.title, id: 'section', section: s })))
       .concat([{ label: 'Search', id: 'search', icon: icons.search }, { label: 'Settings', id: 'settings', icon: icons.gear }]);
-    navItems.forEach((n, i) => {
-      if (n.icon && !navItems[i - 1].icon) h('i', 'nav-sep', navEl);
-      n.el = h('div', 'nav-item' + (n.icon ? ' nav-icon' : ''), navEl);
+    h('i', 'nav-sep', navPinned);
+    navItems.forEach(n => {
+      n.el = h('div', 'nav-item' + (n.icon ? ' nav-icon' : ''), n.icon ? navPinned : navTrack);
       if (n.icon) n.el.innerHTML = n.icon;
       else h('span', '', n.el).textContent = n.label;
     });
+    // Keep focus on the same item (e.g. the Settings icon) when tabs come and go.
+    const same = navItems.findIndex(n => navKey(n) === focused);
+    navIndex = same >= 0 ? same : Math.min(navIndex, navItems.length - 1);
     renderNav();
+  }
+
+  // Slide the tab track just far enough to bring the focused tab into view.
+  function scrollNav() {
+    const n = navItems[navIndex];
+    if (!n || n.el.parentNode !== navTrack) return;
+    const pad = 24;
+    const clipW = navClip.offsetWidth;
+    const maxScroll = Math.max(0, navTrack.scrollWidth - clipW);
+    const left = n.el.offsetLeft;
+    const right = left + n.el.offsetWidth;
+    if (left - pad < navScroll) navScroll = left - pad;
+    else if (right + pad > navScroll + clipW) navScroll = right + pad - clipW;
+    navScroll = Math.max(0, Math.min(maxScroll, navScroll));
+    setTransform(navTrack, 'translateX(' + (-navScroll) + 'px)');
   }
 
   function renderNav() {
@@ -96,6 +134,7 @@ export function HomeScreen() {
       toggleClass(n.el, 'current', n.id === 'home');
     });
     toggleClass(el, 'in-nav', zone === 'nav');
+    scrollNav();
   }
 
   function showHero(item) {
@@ -173,24 +212,56 @@ export function HomeScreen() {
     }
   }
 
+  // The Watchlist row goes after Continue Watching / On Deck.
+  function withWatchlist(hubs) {
+    if (!watchHub || !watchHub.Metadata.length) return hubs;
+    let i = 0;
+    while (i < hubs.length && /continue|ondeck/i.test(hubs[i].hubIdentifier)) i++;
+    return hubs.slice(0, i).concat([watchHub], hubs.slice(i));
+  }
+
+  function saveCache() {
+    store.set('homeCache', { server: session.server.id, sections: allSections, hubs: withWatchlist(serverHubs).map(slimHub) });
+  }
+
   async function load() {
     const server = session.server;
     loadedAt = Date.now();
     try {
       const [sections, hubs] = await Promise.all([server.sections(), server.hubs()]);
+      serverHubs = hubs;
       buildNav(sections);
-      setHubs(hubs);
-      store.set('homeCache', { server: server.id, sections, hubs: hubs.map(slimHub) });
+      setHubs(withWatchlist(hubs));
+      saveCache();
     } catch (e) {
       error('home load failed', e);
       if (!rows.length) setText(empty, 'Couldn\'t load from ' + server.name + '. Press OK to retry.');
+      return;
+    }
+    loadWatchlist();
+  }
+
+  // Only Watchlist items that are on this server, so everything in the row plays.
+  async function loadWatchlist() {
+    if (!watchlist.available()) return;
+    watchAt = Date.now();
+    try {
+      const items = await watchlist.onServer(session.server);
+      watchHub = { hubIdentifier: 'watchlist', title: 'Watchlist', type: 'mixed', Metadata: items };
+      setHubs(withWatchlist(serverHubs));
+      saveCache();
+    } catch (e) {
+      error('watchlist load failed', e);
     }
   }
 
   const cached = store.get('homeCache');
   if (cached && session.server && cached.server === session.server.id) {
     buildNav(cached.sections || []);
-    setHubs(cached.hubs || []);
+    const hubs = cached.hubs || [];
+    watchHub = hubs.find(hb => hb.hubIdentifier === 'watchlist') || null;
+    serverHubs = hubs.filter(hb => hb !== watchHub);
+    setHubs(hubs);
   } else {
     buildNav([]);
   }
@@ -207,8 +278,22 @@ export function HomeScreen() {
     name: 'home',
     onShow() {
       ambience.restore();
+      // Libraries may have been hidden or shown in Settings.
+      if (hiddenSections().join(',') !== hiddenSig) buildNav(allSections);
+      const watchChanged = watchlist.changedAt > watchAt;
+      if (watchChanged && watchHub) {
+        // Removed on a detail page: drop it from the row now, not after the refresh.
+        const kept = watchHub.Metadata.filter(m => !watchlist.removed(m));
+        if (kept.length !== watchHub.Metadata.length) {
+          watchHub = Object.assign({}, watchHub, { Metadata: kept });
+          setHubs(withWatchlist(serverHubs));
+          saveCache();
+        }
+      }
       // Coming back from playback: progress and Continue Watching changed.
       if (Date.now() - loadedAt > 5000) load();
+      // Added to the Watchlist on a detail page (load() covers it too).
+      else if (watchChanged) loadWatchlist();
     },
     onKey(action) {
       if (zone === 'nav') {

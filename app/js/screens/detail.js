@@ -9,6 +9,7 @@ import * as icons from '../ui/icons.js';
 import * as router from '../router.js';
 import { playItem } from '../nav.js';
 import { error } from '../util/log.js';
+import * as watchlist from '../plex/watchlist.js';
 
 const SHIFT = 400; // how far the body slides up to reveal seasons/episodes
 
@@ -36,6 +37,8 @@ export function DetailScreen(initial, { autoplay = false } = {}) {
   let zone = 'buttons';
   let alive = true;
   let shown = false;
+  // Known straight away from the saved Watchlist; checked again after load.
+  let onWatchlist = (initial.type === 'movie' || initial.type === 'show') ? watchlist.state(initial) : null;
 
   const isShowLike = () => item.type === 'show';
 
@@ -94,6 +97,9 @@ export function DetailScreen(initial, { autoplay = false } = {}) {
     }
     const watched = isShowLike() ? item.viewedLeafCount >= item.leafCount : !!item.viewCount;
     add(watched ? icons.check : icons.uncheck, watched ? 'Watched' : 'Mark watched', toggleWatched);
+    if (onWatchlist !== null) {
+      add(onWatchlist ? icons.bookmarked : icons.bookmark, onWatchlist ? 'On Watchlist' : 'Add to Watchlist', toggleWatchlist);
+    }
     if (item.type === 'episode' && item.grandparentRatingKey) {
       add(icons.tv, 'Go to show', () => router.push(DetailScreen({ ratingKey: item.grandparentRatingKey, type: 'show', title: item.grandparentTitle })));
     }
@@ -157,6 +163,7 @@ export function DetailScreen(initial, { autoplay = false } = {}) {
         if (seasons[seasonIndex]) await loadEpisodes(seasons[seasonIndex]);
       }
       renderButtons();
+      loadWatchlist();
       if (autoplay) {
         autoplay = false;
         const t = target();
@@ -165,6 +172,28 @@ export function DetailScreen(initial, { autoplay = false } = {}) {
     } catch (e) {
       error('detail load failed', e);
       setText(summary, 'Couldn\'t load details.');
+    }
+  }
+
+  async function loadWatchlist() {
+    if (item.type !== 'movie' && item.type !== 'show') return;
+    try {
+      const on = await watchlist.has(item);
+      if (!alive || on === onWatchlist) return;
+      onWatchlist = on;
+      renderButtons();
+    } catch (e) {
+      error('watchlist state failed', e);
+    }
+  }
+
+  async function toggleWatchlist() {
+    try {
+      await watchlist.setOn(item, !onWatchlist);
+      onWatchlist = !onWatchlist;
+      if (alive) renderButtons();
+    } catch (e) {
+      error('watchlist toggle failed', e);
     }
   }
 
@@ -184,6 +213,7 @@ export function DetailScreen(initial, { autoplay = false } = {}) {
   if (item.title) renderHeader();
   renderButtons();
   load();
+  if (item.guid) loadWatchlist();
 
   function moveZone(dir) {
     const order = ['buttons'];

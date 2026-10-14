@@ -111,7 +111,15 @@ html.playing .ambience { display: none; }
   font: 500 17px/1 var(--body); letter-spacing: 0.06em; color: rgba(255, 255, 255, 0.86);
 }
 
-.nav { display: flex; align-items: center; margin-left: 72px; }
+.nav { display: flex; align-items: center; min-width: 0; margin-left: 72px; }
+/* Library tabs scroll inside this clip; the vertical padding keeps the
+   current-tab dot from being cut off. */
+.nav-clip { min-width: 0; overflow: hidden; padding: 14px 0; }
+.nav-track {
+  position: relative; display: flex; align-items: center;
+  will-change: transform; transition: transform 0.22s var(--ease);
+}
+.nav-pinned { display: flex; align-items: center; flex-shrink: 0; }
 .nav-item {
   position: relative; display: flex; align-items: center; justify-content: center;
   height: 52px; padding: 0 24px; margin-right: 6px; border-radius: 26px;
@@ -128,8 +136,11 @@ html.playing .ambience { display: none; }
 .nav-item.focus::after { display: none; }
 .nav-icon { width: 52px; padding: 0; }
 .nav-icon svg { width: 28px; height: 28px; display: block; }
-.nav-sep { width: 2px; height: 28px; margin: 0 14px 0 8px; border-radius: 1px; background: rgba(255, 247, 230, 0.18); }
-.topbar-who { margin-left: auto; font: 500 22px var(--body); color: var(--dim); white-space: nowrap; }
+.nav-sep { flex-shrink: 0; width: 2px; height: 28px; margin: 0 14px 0 8px; border-radius: 1px; background: rgba(255, 247, 230, 0.18); }
+.topbar-who {
+  flex-shrink: 0; max-width: 320px; margin-left: auto; padding-left: 32px;
+  font: 500 22px var(--body); color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 
 /* ---------- home ---------- */
 
@@ -405,6 +416,12 @@ html.fast .row-track, html.fast .rows-track, html.fast .grid-track, html.fast .r
 .setting-value { color: var(--dim); font-weight: 500; }
 .setting.focus { background: var(--cream); color: var(--bg); }
 .setting.focus .setting-value { color: rgba(11, 13, 18, 0.65); }
+.settings .settings-list { bottom: 120px; overflow: hidden; }
+.settings-track { position: relative; will-change: transform; transition: transform 0.22s var(--ease); }
+.settings-heading {
+  padding: 30px 36px 16px; font: 600 22px var(--body); letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--dim);
+}
 .settings-foot { position: absolute; left: 160px; bottom: 64px; font: 500 20px var(--body); color: var(--dim); }
 
 /* ---------- search ---------- */

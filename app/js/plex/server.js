@@ -12,13 +12,13 @@ export class Server {
     this.cache = new Map();
   }
 
-  async get(path, params, { maxAge = 0 } = {}) {
+  async get(path, params, { maxAge = 0, timeout } = {}) {
     const key = withQuery(path, params);
     if (maxAge) {
       const hit = this.cache.get(key);
       if (hit && Date.now() - hit.t < maxAge) return hit.data;
     }
-    const json = await request(this.uri + path, { token: this.token, params });
+    const json = await request(this.uri + path, { token: this.token, params, timeout });
     const data = json.MediaContainer || json;
     if (maxAge) this.cache.set(key, { t: Date.now(), data });
     return data;
@@ -72,6 +72,20 @@ export class Server {
     const item = (mc.Metadata || [])[0];
     if (item && mc.OnDeck && mc.OnDeck.Metadata) item.onDeck = mc.OnDeck.Metadata[0];
     return item;
+  }
+
+  // Library items matching any of these plex:// guids (e.g. Watchlist entries).
+  // Slow on big libraries (seconds), so callers batch and remember the answers.
+  async byGuids(guids) {
+    const mc = await this.get('/library/all', { guid: guids.join(',') }, { timeout: 30000 });
+    return mc.Metadata || [];
+  }
+
+  // Items by ratingKey, one Plex type at a time (1 movie, 2 show); fast.
+  // (/library/metadata/a,b,c is far slower on this endpoint and can time out.)
+  async byIds(type, ids) {
+    const mc = await this.get('/library/all', { type, id: ids.join(',') });
+    return mc.Metadata || [];
   }
 
   async children(ratingKey) {
